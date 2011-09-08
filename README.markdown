@@ -15,7 +15,7 @@ This approach works great for a multi-AZ primary database server with no replica
 How can I use it?
 -----------------
 
-You'll need mysqldump, gzip, ruby 1.9.x, and the fog and thor gems on your system. It has a command line interface with like a million options since the script needs so much access to do its job. 
+You'll need mysqldump, gzip, ruby 1.9.x, and the fog and thor gems on your system. It has a command line interface with like a million options since the script needs so much access to do its job, or you can point it to a YAML file with options instead.
 
 How can I trust it?
 -------------------
