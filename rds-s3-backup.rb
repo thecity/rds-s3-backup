@@ -73,23 +73,23 @@ class RdsS3Backup < Thor
   
   no_tasks do
     def build_configuration(thor_options)
-      {}.tap do |merged_options|
-        begin
-          if options[:config_file]
-            merged_options = options.merge(YAML.load(File.read(options[:config_file]))) {|key, cmdopt, cfgopt| cmdopt}
-          end
-        rescue Exception => e
-          puts "Unable to read specified configuration file #{options[:config_file]}. Reason given: #{e}"
-          exit(1)
+      merged_options = {}
+      begin
+        if options[:config_file]
+          merged_options = options.merge(YAML.load(File.read(options[:config_file]))) {|key, cmdopt, cfgopt| cmdopt}
         end
-
-        reqd_options = %w(rds_instance_id s3_bucket aws_access_key_id aws_secret_access_key mysql_database mysql_username mysql_password)
-        nil_options = reqd_options.find_all{ |opt| merged_options[opt].nil?}
-        if nil_options.count > 0
-          puts "No value provided for required option(s) #{nil_options.join(' ')} in either config file or options."
-          exit(1)
-        end
+      rescue Exception => e
+        puts "Unable to read specified configuration file #{options[:config_file]}. Reason given: #{e}"
+        exit(1)
       end
+
+      reqd_options = %w(rds_instance_id s3_bucket aws_access_key_id aws_secret_access_key mysql_database mysql_username mysql_password)
+      nil_options = reqd_options.find_all{ |opt| merged_options[opt].nil?}
+      if nil_options.count > 0
+        puts "No value provided for required option(s) #{nil_options.join(' ')} in either config file or options."
+        exit(1)
+      end
+      merged_options
     end
     
     def cleanup(new_snap, backup_server, backup_file_filepath)
