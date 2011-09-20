@@ -2,7 +2,10 @@
 
 require 'rubygems'
 require 'thor'
+require 'cocaine'
 require 'fog'
+require 'logger'
+
 
 class RdsS3Backup < Thor
   
@@ -32,10 +35,11 @@ class RdsS3Backup < Thor
                                   :scheme => 'https')
     s3_bucket  = s3.directories.get(my_options[:s3_bucket])
 
-    snap_name        = "s3-dump-snap-#{Time.now.to_i}"
+    snap_timestamp   = Time.now.strftime('%Y-%m-%d-%H-%M-%S-%Z')
+    snap_name        = "s3-dump-snap-#{snap_timestamp}"
     backup_server_id = "#{rds_server.id}-s3-dump-server"
 
-    backup_file_name     = "#{rds_server.id}-mysqldump-#{Time.now.strftime('%Y-%m-%d-%H-%M-%S-%Z')}.sql.gz"
+    backup_file_name     = "#{rds_server.id}-mysqldump-#{snap_timestamp}.sql.gz"
     backup_file_filepath = File.join(my_options[:dump_directory], backup_file_name)
     
     rds_server.snapshots.new(:id => snap_name).save
@@ -48,21 +52,44 @@ class RdsS3Backup < Thor
     backup_server.wait_for { ready? }
     backup_server.wait_for { ready? }
 
-    dump_result = `mysqldump --opt --add-drop-table --single-transaction --order-by-primary -h #{backup_server.endpoint['Address']} -u #{my_options[:mysql_username]} --password=#{my_options[:mysql_password]} #{my_options[:mysql_database]} | gzip --fast -c > #{backup_file_filepath} 2>&1`
+    mysqldump_command = Cocaine::CommandLine.new('mysqldump',
+                                                 '--opt --add-drop-table --single-transaction --order-by-primary -h :host_address -u :mysql_username --password=:mysql_password :mysql_database | gzip --fast -c > :backup_filepath', 
+                                                 :host_address    => backup_server.endpoint['Address'], 
+                                                 :mysql_username  => my_options[:mysql_username], 
+                                                 :mysql_password  => my_options[:mysql_password], 
+                                                 :mysql_database  => my_options[:mysql_database], 
+                                                 :backup_filepath => backup_file_filepath,
+                                                 :logger          => Logger.new(STDOUT))
     
-    unless dump_result == ''
-      puts "Dump failed with error #{dump_result}"
+    begin
+      mysqldump_command.run
+    rescue Cocaine::ExitStatusError, Cocaine::CommandNotFoundError => e
+      puts "Dump failed with error #{e.message}"
       cleanup(new_snap, backup_server, backup_file_filepath)
       exit(1)
     end
     
-    if s3_bucket.files.new(:key => File.join(my_options[:s3_prefix], backup_file_name), 
+    tries = 1
+    saved_dump = begin
+      s3_bucket.files.new(:key => File.join(my_options[:s3_prefix], backup_file_name), 
                            :body => File.open(backup_file_filepath), 
                            :acl => 'private', 
                            :content_type => 'application/x-gzip'
                            ).save
+      rescue Exception => e
+        if tries < 3
+          puts "Retrying S3 upload after #{tries} tries"
+          tries += 1          
+          retry
+        else
+          puts "Trapped exception #{e} on try #{tries}"
+          false
+        end
+      end
+      
+    if saved_dump
       if my_options[:dump_ttl] > 0
-       prune_dumpfiles(File.join(my_options[:s3_prefix], "#{rds_server.id}-mysqldump-"), my_options[:dump_ttl])
+       prune_dumpfiles(s3_bucket, File.join(my_options[:s3_prefix], "#{rds_server.id}-mysqldump-"), my_options[:dump_ttl])
       end   
     else
       puts "S3 upload failed!"                        
@@ -102,10 +129,10 @@ class RdsS3Backup < Thor
       File.unlink(backup_file_filepath)
     end
     
-    def prune_dumpfiles(backup_file_prefix, dump_ttl)
+    def prune_dumpfiles(s3_bucket, backup_file_prefix, dump_ttl)
       my_files = s3_bucket.files.all('prefix' => backup_file_prefix)
       if my_files.count > dump_ttl
-        files_by_date = my_files.sort {|x,y| x.created_at <=> y.created_at}
+        files_by_date = my_files.sort {|x,y| x.last_modified <=> y.last_modified}
         (files_by_date.count - dump_ttl).times do |i| 
           files_by_date[i].destroy
         end
