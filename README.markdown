@@ -17,6 +17,8 @@ How can I use it?
 
 You'll need mysqldump, gzip, ruby 1.9.x, and the fog and thor gems on your system. It has a command line interface with like a million options since the script needs so much access to do its job, or you can point it to a YAML file with options instead.
 
+The easiest way to use it is to configure a Chef role using [this cookbook](https://github.com/thecity/cookbooks/tree/master/rds-s3-backups).
+
 How can I trust it?
 -------------------
 
