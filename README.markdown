@@ -20,4 +20,4 @@ You'll need mysqldump, gzip, ruby 1.9.x, and the fog and thor gems on your syste
 How can I trust it?
 -------------------
 
-You probably shouldn't, it's pretty naïve at the moment.
+It has been working well in our production site for some time, but don't take my word for it.
