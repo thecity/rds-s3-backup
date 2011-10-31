@@ -20,7 +20,7 @@ You'll need mysqldump, gzip, ruby 1.9.x, and the fog and thor gems on your syste
 The easiest way to use it is to configure a Chef role using [this cookbook](https://github.com/thecity/cookbooks/tree/master/rds-s3-backups).
 
 Or use direct with:
-ruby rds-s3-backup.rb s3_dump --config-file=config.yml
+  ruby rds-s3-backup.rb s3_dump --config-file=config.yml
 
 How can I trust it?
 -------------------
