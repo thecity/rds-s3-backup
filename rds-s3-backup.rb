@@ -21,12 +21,14 @@ class RdsS3Backup < Thor
   method_option :dump_ttl, :default => 0, :desc => "Number of old dumps to keep."
   method_option :dump_directory, :default => '/mnt/', :desc => "Where to store the temporary sql dump file."
   method_option :config_file, :desc => "YAML file of defaults for any option. Options given during execution override these."
+  method_option :aws_region, :default => "us-east-1"
 
   def s3_dump
     my_options = build_configuration(options)
     
     rds        = Fog::AWS::RDS.new(:aws_access_key_id => my_options[:aws_access_key_id], 
-                                   :aws_secret_access_key => my_options[:aws_secret_access_key])
+                                   :aws_secret_access_key => my_options[:aws_secret_access_key],
+                                   :region => my_options[:aws_region])
 
     rds_server = rds.servers.get(my_options[:rds_instance_id])
     s3         = Fog::Storage.new(:provider => 'AWS', 
