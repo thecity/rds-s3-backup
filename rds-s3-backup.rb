@@ -21,8 +21,8 @@ class RdsS3Backup < Thor
   method_option :dump_ttl, :default => 0, :desc => "Number of old dumps to keep."
   method_option :dump_directory, :default => '/mnt/', :desc => "Where to store the temporary sql dump file."
   method_option :config_file, :desc => "YAML file of defaults for any option. Options given during execution override these."
-  method_option :aws_region, :default => "us-east-1"
-  method_option :aws_s3_region
+  method_option :aws_region, :default => "us-east-1", :desc => "Region of your RDS server (and S3 storage, unless aws-s3-region is specified)."
+  method_option :aws_s3_region, :desc => "Region to store your S3 dumpfiles, if different from the RDS region"
 
   def s3_dump
     my_options = build_configuration(options)
@@ -35,8 +35,9 @@ class RdsS3Backup < Thor
     s3         = Fog::Storage.new(:provider => 'AWS', 
                                   :aws_access_key_id => my_options[:aws_access_key_id], 
                                   :aws_secret_access_key => my_options[:aws_secret_access_key], 
-                                  :region => my_options[:aws_s3_region]||my_options[:aws_region],
+                                  :region => my_options[:aws_s3_region] || my_options[:aws_region],
                                   :scheme => 'https')
+
     s3_bucket  = s3.directories.get(my_options[:s3_bucket])
 
     snap_timestamp   = Time.now.strftime('%Y-%m-%d-%H-%M-%S-%Z')
@@ -48,6 +49,8 @@ class RdsS3Backup < Thor
     
     rds_server.snapshots.new(:id => snap_name).save
     new_snap = rds_server.snapshots.get(snap_name)
+
+    # these double wait_fors look weird, but I've had ready? lie to me.
     new_snap.wait_for { ready? }
     new_snap.wait_for { ready? }
 
@@ -57,13 +60,13 @@ class RdsS3Backup < Thor
     backup_server.wait_for { ready? }
 
     mysqldump_command = Cocaine::CommandLine.new('mysqldump',
-                                                 '--opt --add-drop-table --single-transaction --order-by-primary -h :host_address -u :mysql_username --password=:mysql_password :mysql_database | gzip --fast -c > :backup_filepath', 
-                                                 :host_address    => backup_server.endpoint['Address'], 
-                                                 :mysql_username  => my_options[:mysql_username], 
-                                                 :mysql_password  => my_options[:mysql_password], 
-                                                 :mysql_database  => my_options[:mysql_database], 
-                                                 :backup_filepath => backup_file_filepath,
-                                                 :logger          => Logger.new(STDOUT))
+      '--opt --add-drop-table --single-transaction --order-by-primary -h :host_address -u :mysql_username --password=:mysql_password :mysql_database | gzip --fast -c > :backup_filepath', 
+      :host_address    => backup_server.endpoint['Address'], 
+      :mysql_username  => my_options[:mysql_username], 
+      :mysql_password  => my_options[:mysql_password], 
+      :mysql_database  => my_options[:mysql_database], 
+      :backup_filepath => backup_file_filepath,
+      :logger          => Logger.new(STDOUT))
     
     begin
       mysqldump_command.run
@@ -106,9 +109,12 @@ class RdsS3Backup < Thor
     def build_configuration(thor_options)
       merged_options = {}
       begin
-        if options[:config_file]
-          merged_options = options.merge(YAML.load(File.read(options[:config_file]))) {|key, cmdopt, cfgopt| cmdopt}
-        end
+        merged_options = 
+          if options[:config_file]
+            options.merge(YAML.load(File.read(options[:config_file]))) {|key, cmdopt, cfgopt| cmdopt}
+          else
+            options
+          end
       rescue Exception => e
         puts "Unable to read specified configuration file #{options[:config_file]}. Reason given: #{e}"
         exit(1)
