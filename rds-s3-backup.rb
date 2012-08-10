@@ -95,16 +95,19 @@ class RdsS3Backup < Thor
       end
       
     if saved_dump
+      exit_code = 0
       if my_options[:dump_ttl] > 0
        prune_dumpfiles(s3_bucket, File.join(my_options[:s3_prefix], "#{rds_server.id}-mysqldump-"), my_options[:dump_ttl])
       end   
     else
+      exit_code = 1
       # We will exit cleanly because the script didn't error out, but
       # by writing to stderr, email will be sent notifying that the upload failed.
       $stderr.puts "S3 upload failed! Tried #{tries} times."  
     end
 
     cleanup(new_snap, backup_server, backup_file_filepath)
+    exit(exit_code)
   end
   
   no_tasks do
